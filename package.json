@@ -1,0 +1,62 @@
+{
+  "name": "omp-hashline-edit-hybrid",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Fail-closed, hash-anchored text mutation system for Oh My Pi (@oh-my-pi/pi-coding-agent). Every line gets a stable 4-char anchor; destructive edits require served-state proof; multi-edit transactions commit atomically; persistent stale-safe undo; crash-recovery journal.",
+  "main": "index.ts",
+  "author": "omp-hashline-edit-hybrid contributors",
+  "keywords": [
+    "omp-package",
+    "oh-my-pi",
+    "coding-agent",
+    "extension",
+    "hashline",
+    "hash-anchored",
+    "anchors",
+    "read",
+    "edit",
+    "insert",
+    "grep",
+    "undo",
+    "file-editing",
+    "transactional",
+    "stable"
+  ],
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "omp": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "diff": "^8.0.2",
+    "typebox": "^1.3.7"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": ">=0.75.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --coverage.thresholds.lines=92 --coverage.thresholds.statements=91 --coverage.thresholds.functions=90 --coverage.thresholds.branches=85",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.1.16",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsx": "^4.23.12",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.8"
+  }
+}
