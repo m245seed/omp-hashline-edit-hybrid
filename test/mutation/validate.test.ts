@@ -74,10 +74,19 @@ describe("strict payload validation (spec §15, §17)", () => {
     ).toThrow(/E_BAD_SHAPE/);
   });
 
-  it("rejects malformed expected_revision", () => {
+  it("rejects malformed expected_revision with actionable guidance", () => {
     expect(() =>
       validateEditRequest({ path: "f", edits: [{ range: ["Ab12", "Cd34"], lines: ["x"] }], expected_revision: "abc" }),
-    ).toThrow(/E_BAD_SHAPE/);
+    ).toThrow(
+      /Received a string of length 3.*Omit "expected_revision".*details\.revision.*after_revision/,
+    );
+    expect(() =>
+      validateInsertRequest({
+        path: "f",
+        inserts: [{ anchor: "Ab12", direction: "after", lines: ["x"] }],
+        expected_revision: null,
+      }),
+    ).toThrow(/Received null.*Omit "expected_revision"/);
   });
 });
 

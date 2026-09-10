@@ -92,7 +92,16 @@ describe("read tool (spec §12, §25)", () => {
 
   it("rejects directories and non-files", async () => {
     const dir = makeProject();
-    await expect(runTool(readTool, { path: "." }, dir)).rejects.toThrow(/directory/);
+    await expect(
+      runTool(readTool, { path: "." }, dir),
+    ).rejects.toThrow(/directory.*glob\(\).*grep\(\)/);
+  });
+
+  it("guides missing paths without recursive read hints", async () => {
+    const dir = makeProject();
+    await expect(
+      runTool(readTool, { path: "missing.ts" }, dir),
+    ).rejects.toThrow(/does not exist.*cannot be read or edited.*write\(\)/);
   });
 
   it("rejects unsupported encodings", async () => {

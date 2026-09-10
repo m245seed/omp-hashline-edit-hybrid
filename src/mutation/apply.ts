@@ -41,18 +41,32 @@ interface Span {
   requestIndex: number;
   byteStart: number;
   byteEnd: number; // exclusive
+  lineStart: number;
+  lineEnd: number;
+  direction?: "before" | "after";
 }
 
-/** Returns the indexes of the first overlapping pair, if any. */
-function findOverlap(sorted: Span[]): [number, number] | undefined {
+/** Returns the first overlapping pair, if any. */
+function findOverlap(sorted: Span[]): [Span, Span] | undefined {
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1]!;
     const cur = sorted[i]!;
     if (cur.byteStart < prev.byteEnd) {
-      return [prev.requestIndex, cur.requestIndex];
+      return [prev, cur];
     }
   }
   return undefined;
+}
+
+function formatOverlapRange(span: Span, anchors: readonly string[]): string {
+  const start = anchors[span.lineStart];
+  const end = anchors[span.lineEnd];
+  const range =
+    start !== undefined && end !== undefined
+      ? `[${JSON.stringify(start)}, ${JSON.stringify(end)}]`
+      : `[line ${span.lineStart + 1}, line ${span.lineEnd + 1}]`;
+  const direction = span.direction === undefined ? "" : ` (${span.direction})`;
+  return `edit #${span.requestIndex + 1} range ${range}${direction}`;
 }
 
 export interface EditOp {
@@ -107,6 +121,9 @@ interface PreparedSpan {
   byteStart: number;
   byteEnd: number;
   insertBytes: string;
+  rangeStart: number;
+  rangeEnd: number;
+  direction?: "before" | "after";
   /** Anchor bookkeeping for the result walk. */
   firstChangedOld: number;
   lastTouchedOld: number;
@@ -190,6 +207,8 @@ function prepareSpans(
         opKind: "edit",
         byteStart,
         byteEnd,
+        rangeStart: op.start,
+        rangeEnd: op.end,
         insertBytes,
         firstChangedOld: op.start,
         lastTouchedOld: op.end,
@@ -230,6 +249,9 @@ function prepareSpans(
           opKind: "insert",
           byteStart,
           byteEnd: byteStart,
+          rangeStart: i,
+          rangeEnd: i,
+          direction: op.direction,
           insertBytes,
           firstChangedOld: i + 1,
           lastTouchedOld: i,
@@ -245,6 +267,9 @@ function prepareSpans(
           opKind: "insert",
           byteStart,
           byteEnd: byteStart,
+          rangeStart: i,
+          rangeEnd: i,
+          direction: op.direction,
           insertBytes: joinNewLines(op.lines, prefEol, prefEol),
           firstChangedOld: i,
           lastTouchedOld: i - 1,
@@ -290,11 +315,17 @@ export function applyTransaction(
       requestIndex: s.requestIndex,
       byteStart: s.byteStart,
       byteEnd: s.byteEnd,
+      lineStart: s.rangeStart,
+      lineEnd: s.rangeEnd,
+      direction: s.direction,
     }));
     const overlap = findOverlap(sortedSpans);
     if (overlap) {
+      const [first, second] = overlap;
       throw new Error(
-        `[E_RANGE_OVERLAP] Requested edit #${overlap[0] + 1} overlaps edit #${overlap[1] + 1}. Ranges that share any line — even a single endpoint line — are invalid. Nothing was modified.`,
+        `[E_RANGE_OVERLAP] Requested edit #${first.requestIndex + 1} overlaps edit #${second.requestIndex + 1}. ` +
+          `Conflicting ranges: ${formatOverlapRange(first, anchorState.anchors)}; ${formatOverlapRange(second, anchorState.anchors)}. ` +
+          "Ranges that share any line — even a single endpoint line — are invalid. Nothing was modified.",
       );
     }
   }

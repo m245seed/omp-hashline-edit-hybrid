@@ -1,6 +1,10 @@
 /** Resource-control limits and canonical protocol IDs (spec §31, §53). */
 export const HASHLINE_PROTOCOL_ID = "pi-hashline/1" as const;
 export const HASHLINE_RESULT_PROTOCOL = "pi-hashline-result/1" as const;
+/** Canonical shape for optional whole-file CAS revisions. */
+export const EXPECTED_REVISION_PATTERN = "^[0-9a-f]{64}$";
+export const EXPECTED_REVISION_DESCRIPTION =
+  "Optional whole-file CAS token: exactly 64 lowercase hexadecimal SHA-256 characters. Copy details.revision from read/write or details.metrics.after_revision from edit/insert; omit when CAS is unused.";
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const MAX_LINES = 250_000;
 export const MAX_DISPLAY_LINE_BYTES = 200 * 1024;

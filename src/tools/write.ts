@@ -19,7 +19,13 @@ import type { ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
 import { toCwd } from "../paths";
 import { abortIf, debugLog, errCode, sha256Hex } from "../utils";
-import { MAX_BYTES, MAX_LINES, HASHLINE_PROTOCOL_ID } from "../constants";
+import {
+  EXPECTED_REVISION_DESCRIPTION,
+  EXPECTED_REVISION_PATTERN,
+  HASHLINE_PROTOCOL_ID,
+  MAX_BYTES,
+  MAX_LINES,
+} from "../constants";
 import { decodeDocument } from "../document/encoding";
 import type { Document } from "../document/lines";
 import { AnchorAllocator } from "../anchors/allocator";
@@ -72,8 +78,8 @@ const writeSchema = Type.Object(
     ),
     expected_revision: Type.Optional(
       Type.String({
-        description:
-          "When provided, the write fails if the current file revision differs (CAS mode).",
+        pattern: EXPECTED_REVISION_PATTERN,
+        description: EXPECTED_REVISION_DESCRIPTION,
       }),
     ),
   },

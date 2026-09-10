@@ -39,6 +39,18 @@ describe("extension registration", () => {
       expect(schemaId ?? descriptionId).toMatch(/^pi-hashline\/(?:[a-z]+@1|1)$/);
     }
 
+    for (const name of ["edit", "insert", "write"] as const) {
+      const schema = pi.tools.get(name)!.parameters as {
+        properties?: Record<string, { pattern?: string; description?: string }>;
+      };
+      const revision = schema.properties?.expected_revision;
+      expect(revision?.pattern).toBe("^[0-9a-f]{64}$");
+      expect(revision?.description).toContain("64 lowercase hexadecimal");
+      expect(revision?.description).toContain("details.revision");
+      expect(revision?.description).toContain("details.metrics.after_revision");
+      expect(revision?.description).toContain("omit when CAS is unused");
+    }
+
     expect(pi.handlers.has("session_start")).toBe(true);
     expect(pi.handlers.has("session_shutdown")).toBe(true);
     expect(pi.handlers.has("tool_result")).toBe(true);

@@ -77,7 +77,7 @@ export async function loadAnchoredFile(
     // raw ENOENT from stat (the readFile branch below never runs for it).
     if (errCode(error) === "ENOENT") {
       throw new Error(
-        `[E_BAD_REF] ${label} does not exist. Use read() to inspect the file before editing.`,
+        `[E_BAD_REF] ${label} does not exist. Verify the path; a missing target cannot be read or edited. Use write() to create a file.`,
       );
     }
     throw error;
@@ -89,7 +89,7 @@ export async function loadAnchoredFile(
   } catch (error: unknown) {
     if (errCode(error) === "ENOENT") {
       throw new Error(
-        `[E_BAD_REF] ${label} does not exist. Use read() to inspect the file before editing.`,
+        `[E_BAD_REF] ${label} does not exist. Verify the path; a missing target cannot be read or edited. Use write() to create a file.`,
       );
     }
     throw error;

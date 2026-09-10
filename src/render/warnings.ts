@@ -97,14 +97,17 @@ export function boundaryDupEvidence(finding: BoundaryDupFinding): string {
 export function boundaryDupRejection(
   path: string,
   editIndex: number,
+  range: readonly [string, string],
   findings: BoundaryDupFinding[],
 ): string {
+  const editLabel =
+    `edit #${editIndex + 1} range [${JSON.stringify(range[0])}, ${JSON.stringify(range[1])}]`;
   const parts = findings.map((finding) => {
     const side =
       finding.kind === "trailing"
         ? `ends with ${finding.size} line(s) identical to the unchanged block immediately after the range`
         : `starts with ${finding.size} line(s) identical to the unchanged block immediately before the range`;
-    return `edit #${editIndex + 1} ${side}: ${boundaryDupEvidence(finding)}`;
+    return `${editLabel} ${side}: ${boundaryDupEvidence(finding)}`;
   });
   return (
     `[E_BOUNDARY_DUP] In ${path}: ${parts.join("; ")}. ` +
@@ -121,14 +124,17 @@ export function boundaryDupRejection(
 export function boundaryDupWarning(
   path: string,
   editIndex: number,
+  range: readonly [string, string],
   findings: BoundaryDupFinding[],
 ): string {
+  const editLabel =
+    `edit #${editIndex + 1} range [${JSON.stringify(range[0])}, ${JSON.stringify(range[1])}]`;
   const parts = findings.map((finding) => {
     const side =
       finding.kind === "trailing"
         ? `ends with ${finding.size} line(s) identical to the block after the range`
         : `starts with ${finding.size} line(s) identical to the block before the range`;
-    return `edit #${editIndex + 1} ${side}`;
+    return `${editLabel} ${side}`;
   });
   return `[W_BOUNDARY_DUP] In ${path}: ${parts.join("; ")}. The request was applied literally with "allow_boundary_duplicate": true; verify the diff.`;
 }

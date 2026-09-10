@@ -9,6 +9,7 @@
 
 import { ANCHOR_RE, ANCHOR_CLASS } from "../anchors/alphabet";
 import { isRec, rejectUnknownFields } from "../utils";
+import { EXPECTED_REVISION_PATTERN } from "../constants";
 
 export const EDIT_ROOT_KEYS = new Set([
   "path",
@@ -180,13 +181,21 @@ function assertOptionalBoolean(
   }
   return value;
 }
+
+const EXPECTED_REVISION_RE = new RegExp(EXPECTED_REVISION_PATTERN);
+
 function assertExpectedRevision(value: unknown): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value === "string" && /^[0-9a-f]{64}$/.test(value)) {
+  if (typeof value === "string" && EXPECTED_REVISION_RE.test(value)) {
     return value;
   }
+  const received =
+    typeof value === "string"
+      ? ` Received a string of length ${value.length}.`
+      : ` Received ${value === null ? "null" : typeof value}.`;
   throw new Error(
-    '[E_BAD_SHAPE] "expected_revision" must be a 64-character lowercase SHA-256 hex revision as returned in tool details.',
+    `[E_BAD_SHAPE] "expected_revision" must be a 64-character lowercase SHA-256 hex revision as returned in tool details.${received} ` +
+      'Omit "expected_revision" when CAS is unused, or copy details.revision from read/write or details.metrics.after_revision from edit/insert.',
   );
 }
 

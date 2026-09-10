@@ -44,7 +44,11 @@ describe("edit safety preflights", () => {
         },
         dir,
       ),
-    ).rejects.toThrow(/E_BOUNDARY_DUP/);
+    ).rejects.toThrow(
+      new RegExp(
+        `E_BOUNDARY_DUP.*range \\["${anchors.get("two")}", "${anchors.get("two")}"\\]`,
+      ),
+    );
     expect(readFileAt(join(dir, "a.ts"))).toBe("one\ntwo\nthree\n");
   });
 

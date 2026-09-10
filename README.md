@@ -43,7 +43,7 @@ grep → edit                                                  (grep output is e
 
 `range` is exactly two inclusive anchors; `lines` are literal logical lines (`[]` deletes). All ranges resolve against the same pre-edit document; every line of every range must be served and exact; overlapping ranges (even sharing an endpoint line) are rejected; a non-empty file can never be emptied via `edit` (`E_WOULD_EMPTY`); no-op transactions change nothing and report `No changes made.` The result is one combined anchored diff whose `" "` and `"+"` rows are immediately editable.
 
-Optional top-level fields: `allow_display_like_content` (writes pasted `ANCHOR│...` content literally instead of rejecting it with `E_DISPLAY_LIKE_CONTENT`), `final_newline` (`preserve` | `present` | `absent`), and `expected_revision` (strict whole-file compare-and-swap mode).
+Optional top-level fields: `allow_display_like_content` (writes pasted `ANCHOR│...` content literally instead of rejecting it with `E_DISPLAY_LIKE_CONTENT`), `final_newline` (`preserve` | `present` | `absent`), and `expected_revision` (strict whole-file compare-and-swap mode; exactly 64 lowercase hexadecimal characters copied from `read`/`write` `details.revision` or `edit`/`insert` `details.metrics.after_revision`; omit when CAS is unused).
 
 ### `insert`
 
@@ -56,11 +56,11 @@ Optional top-level fields: `allow_display_like_content` (writes pasted `ANCHOR�
 }
 ```
 
-The anchor line itself must have been served and must still match. Multiple inserts are transactional; same anchor + direction keep request order. In an empty file (one empty line), `insert after` produces a leading blank line (`"\ncontent"`), while `insert before` produces the natural `"content\n"`.
+The anchor line itself must have been served and must still match. Multiple inserts are transactional; same anchor + direction keep request order. In an empty file (one empty line), `insert after` produces a leading blank line (`"\ncontent"`), while `insert before` produces the natural `"content\n"`. `expected_revision` is optional strict CAS: pass exactly 64 lowercase hexadecimal characters from `read`/`write` `details.revision` or `edit`/`insert` `details.metrics.after_revision`, or omit it when CAS is unused.
 
 ### `write`
 
-`{ path, content, replace_existing?, expected_revision?, allow_display_like_content? }` → atomically creates or fully replaces a file. Overwriting an existing file requires a prior full-file `read` in the current epoch (or the explicit high-risk `replace_existing: true`); `expected_revision` adds strict CAS mode. Content that looks like pasted hashline display output (`ANCHOR│...` rows) is rejected with `E_DISPLAY_LIKE_CONTENT` unless `allow_display_like_content: true` is set. Enforces the global byte/line limits (`E_FILE_TOO_LARGE`) and returns a bounded anchored preview whose rows are edit-ready.
+`{ path, content, replace_existing?, expected_revision?, allow_display_like_content? }` → atomically creates or fully replaces a file. Overwriting an existing file requires a prior full-file `read` in the current epoch (or the explicit high-risk `replace_existing: true`); `expected_revision` is optional strict CAS and must be exactly 64 lowercase hexadecimal characters copied from `read`/`write` `details.revision` or `edit`/`insert` `details.metrics.after_revision`. Omit it when CAS is unused. Content that looks like pasted hashline display output (`ANCHOR│...` rows) is rejected with `E_DISPLAY_LIKE_CONTENT` unless `allow_display_like_content: true` is set. Enforces the global byte/line limits (`E_FILE_TOO_LARGE`) and returns a bounded anchored preview whose rows are edit-ready.
 
 ### `undo`
 

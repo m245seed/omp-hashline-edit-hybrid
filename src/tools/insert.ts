@@ -21,7 +21,11 @@ import {
 } from "../mutation/apply";
 import { loadAnchoredFile } from "../mutation/transaction";
 import { hashlineDetails } from "../render/result-details";
-import { HASHLINE_PROTOCOL_ID } from "../constants";
+import {
+  EXPECTED_REVISION_DESCRIPTION,
+  EXPECTED_REVISION_PATTERN,
+  HASHLINE_PROTOCOL_ID,
+} from "../constants";
 import { checkRangeServed, formatRangeFailure } from "../served/authorize";
 import type { MutationMetrics } from "./shared";
 export interface InsertToolDetails {
@@ -64,7 +68,12 @@ const insertSchema = Type.Object(
         Type.Literal("absent"),
       ]),
     ),
-    expected_revision: Type.Optional(Type.String()),
+    expected_revision: Type.Optional(
+      Type.String({
+        pattern: EXPECTED_REVISION_PATTERN,
+        description: EXPECTED_REVISION_DESCRIPTION,
+      }),
+    ),
   },
   {
     additionalProperties: false,

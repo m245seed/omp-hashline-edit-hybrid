@@ -20,7 +20,12 @@ import { toCwd } from "../paths";
 import { abortIf } from "../utils";
 import { withFileMutationQueue } from "../filesystem/resolve-target";
 import { resolveMutationTarget, commitAndRenderMutation } from "./shared";
-import { getLargeEditGuard, HASHLINE_PROTOCOL_ID } from "../constants";
+import {
+  EXPECTED_REVISION_DESCRIPTION,
+  EXPECTED_REVISION_PATTERN,
+  getLargeEditGuard,
+  HASHLINE_PROTOCOL_ID,
+} from "../constants";
 import {
   validateEditRequest,
   type EditRequest,
@@ -100,8 +105,8 @@ const editSchema = Type.Object(
     ),
     expected_revision: Type.Optional(
       Type.String({
-        description:
-          "When provided, the whole-file CAS mode: the edit fails if the current revision differs.",
+        pattern: EXPECTED_REVISION_PATTERN,
+        description: EXPECTED_REVISION_DESCRIPTION,
       }),
     ),
   },
@@ -262,7 +267,7 @@ async function runEdit(input: RunEditInput): Promise<ReturnType<ToolDefinition<a
           file.texts,
           sortedOps,
         );
-        const boundaryFindings: Array<{ requestIndex: number; findings: BoundaryDupFinding[] }> = [];
+        const boundaryFindings: Array<{ requestIndex: number; range: [string, string]; findings: BoundaryDupFinding[] }> = [];
         for (let i = 0; i < sortedOps.length; i++) {
           const op = sortedOps[i]!;
           const pos = insertPositions[i]!;
@@ -270,19 +275,27 @@ async function runEdit(input: RunEditInput): Promise<ReturnType<ToolDefinition<a
           const after = postTexts.slice(pos + op.lines.length);
           const findings = detectBoundaryDuplication(op.lines, before, after);
           if (findings.length > 0) {
-            boundaryFindings.push({ requestIndex: op.requestIndex, findings });
+            const range: [string, string] = [file.anchors[op.start]!, file.anchors[op.end]!];
+            boundaryFindings.push({ requestIndex: op.requestIndex, range, findings });
           }
         }
         if (boundaryFindings.length > 0) {
           if (request.allow_boundary_duplicate !== true) {
             const first = boundaryFindings[0]!;
             throw new Error(
-              boundaryDupRejection(request.path, first.requestIndex, first.findings),
+              boundaryDupRejection(
+                request.path,
+                first.requestIndex,
+                first.range,
+                first.findings,
+              ),
             );
           }
           // Escape hatch used: apply literally but flag it for review (§55).
-          for (const { requestIndex, findings } of boundaryFindings) {
-            addWarning(boundaryDupWarning(request.path, requestIndex, findings));
+          for (const { requestIndex, range, findings } of boundaryFindings) {
+            addWarning(
+              boundaryDupWarning(request.path, requestIndex, range, findings),
+            );
           }
         }
       },

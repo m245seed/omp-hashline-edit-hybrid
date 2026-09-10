@@ -160,7 +160,9 @@ export async function checkFileKind(
 
 export function assertFileKind(kind: FileKind, label: string): void {
   if (kind.kind === "directory") {
-    throw new Error(`[E_BAD_REF] ${label} is a directory, not a file.`);
+    throw new Error(
+      `[E_BAD_REF] ${label} is a directory, not a file. Use glob() to list entries or grep() to search directory contents.`,
+    );
   }
   if (kind.kind === "not_file") {
     throw new Error(`[E_BAD_REF] ${label} is not a regular file.`);

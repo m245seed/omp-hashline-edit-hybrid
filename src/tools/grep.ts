@@ -186,7 +186,9 @@ export function buildGrepToolDef(): ToolDefinition<any, GrepToolDetails> {
       try {
         searchInfo = await fsStat(searchPath);
       } catch {
-        throw new Error(`[E_BAD_REF] Path not found: ${searchPath}`);
+        throw new Error(
+          `[E_BAD_REF] Path not found: ${searchPath}. Verify the path; grep accepts one existing file or directory. Use glob() to discover paths.`,
+        );
       }
       if (!searchInfo.isDirectory() && !searchInfo.isFile()) {
         throw new Error(

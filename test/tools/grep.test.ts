@@ -183,6 +183,15 @@ describe("grep tool (spec §24)", () => {
     expect(textOf(result)).toContain("No matches found");
   });
 
+  it("guides missing search paths", async () => {
+    const dir = makeProject();
+    await expect(
+      runTool(grepTool, { pattern: "x", path: "missing.ts" }, dir),
+    ).rejects.toThrow(
+      /Path not found.*Verify the path.*one existing file or directory.*glob\(\)/,
+    );
+  });
+
   it("validates the pattern field", async () => {
     const dir = makeProject();
     await expect(runTool(grepTool, { path: "." }, dir)).rejects.toThrow(

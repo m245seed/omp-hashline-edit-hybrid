@@ -122,7 +122,9 @@ describe("applyTransaction — replacement (spec §6, §70)", () => {
         edit(0, 2, ["X"], 0),
         edit(2, 4, ["Y"], 1),
       ]),
-    ).toThrow(/E_RANGE_OVERLAP/);
+    ).toThrow(
+      /E_RANGE_OVERLAP.*Conflicting ranges: edit #1 range \["A000", "A002"\]; edit #2 range \["A002", "A004"\]/,
+    );
   });
 
   it("rejects ranges sharing an endpoint line (spec §20)", () => {
