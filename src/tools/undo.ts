@@ -7,11 +7,8 @@
  * modified, so undo never overwrites later work. Restores exact previous
  * bytes (BOM, CRLF/CR/LF, final newline, trailing whitespace) and exact
  * previous anchors: anchors present before the transaction return exactly;
- * anchors introduced by the undone transaction become retired.
- *
- * Undo history and file identity are independent of the context epoch
- * (PH-CONTEXT-005): undo works regardless of epoch advances.
  */
+import { toCwd } from "../paths";
 import { readFile } from "fs/promises";
 import { HASHLINE_PROTOCOL_ID } from "../constants";
 import type { ToolDefinition } from "@oh-my-pi/pi-coding-agent";
@@ -76,10 +73,8 @@ export function buildUndoToolDef(): ToolDefinition<any, UndoToolDetails> {
       }
       rejectUnknownFields(params, UNDO_ROOT_KEYS, "undo request");
       const requestPath = assertPath(params.path);
-      const mutationTargetPath = await resolveMutationTarget(
-        requestPath,
-        ctx.cwd,
-      );
+      const requestedPath = toCwd(requestPath, ctx.cwd);
+      const mutationTargetPath = await resolveMutationTarget(requestPath, ctx.cwd);
 
       return withFileMutationQueue(mutationTargetPath, async () => {
         abortIf(signal);
@@ -136,6 +131,7 @@ export function buildUndoToolDef(): ToolDefinition<any, UndoToolDetails> {
         abortIf(signal);
         await commitMutation({
           realPath: mutationTargetPath,
+          requestedPath,
           label: requestPath,
           rawBefore: raw,
           checksumBefore: currentChecksum,

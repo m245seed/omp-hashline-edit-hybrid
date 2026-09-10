@@ -16,6 +16,7 @@
 
 import type { ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
+import { toCwd } from "../paths";
 import { abortIf } from "../utils";
 import { withFileMutationQueue } from "../filesystem/resolve-target";
 import { resolveMutationTarget, commitAndRenderMutation } from "./shared";
@@ -133,24 +134,22 @@ export function buildEditToolDef(): ToolDefinition<any, EditToolDetails> {
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const request = validateEditRequest(params);
+      const requestedPath = toCwd(request.path, ctx.cwd);
       const mutationTargetPath = await resolveMutationTarget(request.path, ctx.cwd);
-      return runEdit({
-        request,
-        mutationTargetPath,
-        signal,
-      });
+      return runEdit({ request, requestedPath, mutationTargetPath, signal });
     },
   } as ToolDefinition<any, EditToolDetails>;
 }
 
 interface RunEditInput {
   request: EditRequest;
+  requestedPath: string;
   mutationTargetPath: string;
   signal?: AbortSignal;
 }
 
 async function runEdit(input: RunEditInput): Promise<ReturnType<ToolDefinition<any, EditToolDetails>["execute"]>> {
-  const { request, mutationTargetPath, signal } = input;
+  const { request, requestedPath, mutationTargetPath, signal } = input;
   return withFileMutationQueue(mutationTargetPath, async () => {
     abortIf(signal);
     const file = await loadAnchoredFile(mutationTargetPath, request.path);
@@ -232,6 +231,7 @@ async function runEdit(input: RunEditInput): Promise<ReturnType<ToolDefinition<a
     return commitAndRenderMutation({
       tool: "edit",
       displayPath: request.path,
+      requestedPath,
       realPath: mutationTargetPath,
       file,
       result,

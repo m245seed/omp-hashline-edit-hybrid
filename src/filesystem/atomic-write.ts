@@ -11,8 +11,8 @@
  */
 
 import { randomUUID } from "crypto";
-import { lstat, open, readdir, rename, rm, stat } from "fs/promises";
-import { dirname, join } from "path";
+import { lstat, open, readdir, rename, rm, stat, type FileHandle } from "fs/promises";
+import { dirname, join, resolve as resolvePath } from "path";
 import { MAX_BYTES, STALE_TEMP_MS } from "../constants";
 import { errCode } from "../utils";
 import { resolveTarget } from "./resolve-target";
@@ -51,14 +51,51 @@ async function sweepStaleTemps(dir: string): Promise<void> {
 }
 export async function syncDir(dir: string): Promise<void> {
   if (process.platform === "win32") return;
+  const handle = await open(dir, "r");
   try {
-    const handle = await open(dir, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+async function verifyOpenHandle(
+  handle: FileHandle,
+  targetPath: string,
+  expected: Uint8Array,
+): Promise<void> {
+  const info = await handle.stat();
+  let equal = info.size === expected.byteLength;
+  if (equal && info.size > 0) {
+    const chunkSize = 64 * 1024;
+    const buffer = Buffer.alloc(Math.min(chunkSize, info.size));
+    let offset = 0;
+    while (offset < info.size) {
+      const count = Math.min(chunkSize, info.size - offset);
+      const { bytesRead } = await handle.read(buffer, 0, count, offset);
+      if (
+        bytesRead !== count ||
+        !buffer.subarray(0, count).equals(expected.subarray(offset, offset + count))
+      ) {
+        equal = false;
+        break;
+      }
+      offset += count;
     }
-  } catch {}
+  }
+  const pathInfo = await lstat(targetPath).catch(() => undefined);
+  if (
+    !pathInfo?.isFile() ||
+    pathInfo.dev !== info.dev ||
+    pathInfo.ino !== info.ino ||
+    pathInfo.size !== info.size
+  ) {
+    equal = false;
+  }
+  if (!equal) {
+    throw new Error(
+      `[E_FILE_CHANGED] The file ${targetPath} changed before the in-place write. Nothing was modified.`,
+    );
+  }
 }
 
 export interface TargetInfo {
@@ -117,6 +154,19 @@ export async function prepareTempWrite(
   return tempPath;
 }
 
+/** Error raised after rename succeeded but directory durability failed. */
+export class CommitAfterRenameError extends Error {
+  readonly committed = true;
+
+  constructor(cause: unknown) {
+    super(
+      `Directory synchronization failed after the replacement was committed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+    this.name = "CommitAfterRenameError";
+  }
+}
+
 /** Phase 6 — commit: rename temp over target, then fsync the parent dir. */
 export async function commitTempFile(
   tempPath: string,
@@ -124,7 +174,14 @@ export async function commitTempFile(
 ): Promise<void> {
   const dir = dirname(targetPath);
   await rename(tempPath, targetPath);
-  await syncDir(dir);
+  try {
+    await syncDir(dir);
+  } catch (error: unknown) {
+    // The rename is durable from the namespace's point of view even when the
+    // directory fsync fails. Preserve the journal so startup recovery can
+    // finalize state from the committed file rather than deleting evidence.
+    throw new CommitAfterRenameError(error);
+  }
 }
 
 export async function removeTempFile(tempPath: string): Promise<void> {
@@ -141,7 +198,7 @@ export async function precommitVerify(
   expectAbsent = false,
 ): Promise<void> {
   const currentTarget = await resolveTarget(path);
-  if (currentTarget !== originalTarget) {
+  if (resolvePath(currentTarget) !== resolvePath(originalTarget)) {
     throw new Error(
       `[E_PATH_CHANGED] The target of ${path} changed during transaction preparation (it now resolves to ${currentTarget}). Nothing was modified.`,
     );
@@ -230,20 +287,20 @@ export async function precommitVerify(
 }
 
 /**
- * Hard-link in-place write (spec §44): recheck checksum before writing,
- * write through one open handle without truncating before the new content
- * is fully written, then truncate if the new content is shorter.
- * This avoids exposing concurrent readers to a temporarily empty file.
+ * Hard-link in-place write (spec §44): when expectedBefore is supplied,
+ * compare the already-open handle immediately before writing. This closes the
+ * precommit-check/write race for shared inodes.
  */
 export async function writeInPlace(
   targetPath: string,
   content: Uint8Array,
   mode?: number,
   createIfMissing = true,
+  expectedBefore?: Uint8Array,
 ): Promise<void> {
   // Use r+ to avoid O_TRUNC before write. Commit callers disable creation so
   // a deleted hardlink cannot be silently recreated as a new inode.
-  let handle: Awaited<ReturnType<typeof open>>;
+  let handle: FileHandle;
   try {
     handle = await open(targetPath, "r+");
   } catch (error: unknown) {
@@ -254,8 +311,6 @@ export async function writeInPlace(
         );
       }
       try {
-        // Exclusive creation prevents a target that appears between the
-        // failed r+ open and this fallback from being truncated.
         handle = await open(targetPath, "wx", mode ?? 0o666);
       } catch (createError: unknown) {
         if (errCode(createError) === "EEXIST") {
@@ -270,12 +325,13 @@ export async function writeInPlace(
     }
   }
   try {
+    if (expectedBefore !== undefined) {
+      await verifyOpenHandle(handle, targetPath, expectedBefore);
+    }
     await handle.writeFile(content);
     // If new content is shorter than old file, truncate the remainder.
-    // Failures must propagate: swallowing one here would leave the file as
-    // new content + stale tail while the edit reports success (spec §45).
-    const stat = await handle.stat();
-    if (stat.size > content.byteLength) {
+    const current = await handle.stat();
+    if (current.size > content.byteLength) {
       await handle.truncate(content.byteLength);
     }
     await handle.sync();

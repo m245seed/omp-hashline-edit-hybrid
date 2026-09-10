@@ -17,9 +17,8 @@
 import { stat as fsStat } from "fs/promises";
 import type { ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
+import { toCwd } from "../paths";
 import { abortIf, debugLog, errCode, sha256Hex } from "../utils";
-import { withFileMutationQueue } from "../filesystem/resolve-target";
-import { resolveMutationTarget, renderAutoReadPreview } from "./shared";
 import { MAX_BYTES, MAX_LINES, HASHLINE_PROTOCOL_ID } from "../constants";
 import { decodeDocument } from "../document/encoding";
 import type { Document } from "../document/lines";
@@ -38,6 +37,8 @@ import {
   validateWriteRequest,
   type WriteRequest,
 } from "../mutation/validate";
+import { withFileMutationQueue } from "../filesystem/resolve-target";
+import { resolveMutationTarget, renderAutoReadPreview } from "./shared";
 import { checkRangeServed, formatRangeFailure } from "../served/authorize";
 import { pruneServedPath } from "../served/ledger";
 import { hashlineDetails } from "../render/result-details";
@@ -110,21 +111,15 @@ export function buildWriteToolDef(): ToolDefinition<any, WriteToolDetails> {
 
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       const request = validateWriteRequest(rawParams);
-      const mutationTargetPath = await resolveMutationTarget(
-        request.path,
-        ctx.cwd,
-      );
-      return runWrite({
-        request,
-        mutationTargetPath,
-        signal,
-      });
+      const requestedPath = toCwd(request.path, ctx.cwd);
+      const mutationTargetPath = await resolveMutationTarget(request.path, ctx.cwd);
+      return runWrite({ request, requestedPath, mutationTargetPath, signal });
     },
   } as ToolDefinition<any, WriteToolDetails>;
 }
-
 interface RunWriteInput {
   request: WriteRequest;
+  requestedPath: string;
   mutationTargetPath: string;
   signal?: AbortSignal;
 }
@@ -132,7 +127,7 @@ interface RunWriteInput {
 async function runWrite(
   input: RunWriteInput,
 ): Promise<ReturnType<ToolDefinition<any, WriteToolDetails>["execute"]>> {
-  const { request, mutationTargetPath, signal } = input;
+  const { request, requestedPath, mutationTargetPath, signal } = input;
   const requestPath = request.path;
   const content = request.content;
   const replaceExisting = request.replace_existing === true;
@@ -269,6 +264,7 @@ async function runWrite(
     abortIf(signal);
     await commitMutation({
       realPath: mutationTargetPath,
+      requestedPath,
       label: requestPath,
       rawBefore,
       checksumBefore,

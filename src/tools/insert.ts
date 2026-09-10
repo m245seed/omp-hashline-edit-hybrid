@@ -9,6 +9,7 @@
 
 import type { ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "typebox";
+import { toCwd } from "../paths";
 import { abortIf } from "../utils";
 import { withFileMutationQueue } from "../filesystem/resolve-target";
 import { resolveMutationTarget, commitAndRenderMutation } from "./shared";
@@ -93,24 +94,22 @@ export function buildInsertToolDef(): ToolDefinition<any, InsertToolDetails> {
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const request = validateInsertRequest(params);
+      const requestedPath = toCwd(request.path, ctx.cwd);
       const mutationTargetPath = await resolveMutationTarget(request.path, ctx.cwd);
-      return runInsert({
-        request,
-        mutationTargetPath,
-        signal,
-      });
+      return runInsert({ request, requestedPath, mutationTargetPath, signal });
     },
   } as ToolDefinition<any, InsertToolDetails>;
 }
 
 interface RunInsertInput {
   request: ReturnType<typeof validateInsertRequest>;
+  requestedPath: string;
   mutationTargetPath: string;
   signal?: AbortSignal;
 }
 
 async function runInsert(input: RunInsertInput): Promise<ReturnType<ToolDefinition<any, InsertToolDetails>["execute"]>> {
-  const { request, mutationTargetPath, signal } = input;
+  const { request, requestedPath, mutationTargetPath, signal } = input;
   return withFileMutationQueue(mutationTargetPath, async () => {
     abortIf(signal);
     const file = await loadAnchoredFile(mutationTargetPath, request.path);
@@ -158,6 +157,7 @@ async function runInsert(input: RunInsertInput): Promise<ReturnType<ToolDefiniti
     return commitAndRenderMutation({
       tool: "insert",
       displayPath: request.path,
+      requestedPath,
       realPath: mutationTargetPath,
       file,
       result,

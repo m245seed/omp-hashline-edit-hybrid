@@ -82,6 +82,31 @@ describe("grep tool (spec §24)", () => {
       expect(servedText(join(dir, "a.ts"), row.slice(0, 4))).toBe(row.slice(5));
     }
   });
+  it("normalizes CRLF match rows for exact served edits", async () => {
+    const dir = makeProject();
+    writeFileAt(dir, "a.ts", "one\r\ntwo target\r\nthree\r\n");
+    const result = await runTool(
+      grepTool,
+      { pattern: "target", path: "a.ts" },
+      dir,
+    );
+    const text = textOf(result);
+    const row = text.split("\n").find((line) => line.includes("two target"));
+    expect(row).toBeDefined();
+    const anchor = row!.slice(0, 4);
+    expect(row).toBe(`${anchor}│two target`);
+    expect(servedText(join(dir, "a.ts"), anchor)).toBe("two target");
+
+    const edited = await runTool(
+      editTool,
+      { path: "a.ts", edits: [{ range: [anchor, anchor], lines: ["TWO target"] }] },
+      dir,
+    );
+    expect(edited.isError).toBeFalsy();
+    expect(require("fs").readFileSync(join(dir, "a.ts"), "utf-8")).toBe(
+      "one\r\nTWO target\r\nthree\r\n",
+    );
+  });
 
   it("supports literal search, ignoreCase, globs, and limits", async () => {
     const dir = makeProject();
@@ -119,7 +144,35 @@ describe("grep tool (spec §24)", () => {
       { pattern: "alpha", path: ".", ignoreCase: true, limit: 1 },
       dir,
     );
-    expect(textOf(limited)).toContain("matches limit reached");
+    const limitedText = textOf(limited);
+    expect(limitedText).toContain("matches limit reached");
+    expect(limited.details?.matches).toBe(1);
+    expect(
+      limitedText
+        .split("\n")
+        .filter((line) => /^[A-Za-z0-9]{4}│/.test(line)),
+    ).toHaveLength(1);
+  });
+  it("excludes buffered context for matches beyond the limit", async () => {
+    const dir = makeProject();
+    writeFileAt(
+      dir,
+      "a.ts",
+      "first before\nfirst TARGET\nfirst after\ngap\nsecond before\nsecond TARGET\nsecond after\n",
+    );
+    const result = await runTool(
+      grepTool,
+      { pattern: "TARGET", path: "a.ts", context: 1, limit: 1 },
+      dir,
+    );
+    const text = textOf(result);
+    expect(result.details?.matches).toBe(1);
+    expect(text).toContain("first before");
+    expect(text).toContain("first TARGET");
+    expect(text).toContain("first after");
+    expect(text).not.toContain("second before");
+    expect(text).not.toContain("second TARGET");
+    expect(text).not.toContain("second after");
   });
 
   it("renders no matches cleanly", async () => {

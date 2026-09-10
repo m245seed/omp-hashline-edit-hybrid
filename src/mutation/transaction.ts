@@ -44,6 +44,7 @@ import {
   removeTempFile,
   precommitVerify,
   writeInPlace,
+  CommitAfterRenameError,
 } from "../filesystem/atomic-write";
 import { errCode, sha256Hex } from "../utils";
 import type { FinalNewline } from "./validate";
@@ -151,9 +152,10 @@ export async function loadAnchoredFile(
     retired: newSnapshot.retired,
   };
 }
-
 export interface CommitInput {
   realPath: string;
+  /** Original absolute path requested by the caller, before symlink resolution. */
+  requestedPath?: string;
   /** Display path used in messages. */
   label: string;
   rawBefore: Buffer;
@@ -200,6 +202,7 @@ function assertMutationResultLimits(input: CommitInput): void {
 export async function commitMutation(input: CommitInput): Promise<void> {
   const {
     realPath,
+    requestedPath = realPath,
     label,
     rawBefore,
     checksumBefore,
@@ -220,7 +223,6 @@ export async function commitMutation(input: CommitInput): Promise<void> {
     warnings,
     expectAbsent,
   } = input;
-
   assertMutationResultLimits(input);
   if (expectedRevision !== undefined && expectedRevision !== checksumBefore) {
     throw new Error(
@@ -284,14 +286,14 @@ export async function commitMutation(input: CommitInput): Promise<void> {
     // Phases 4–5.
     if (target.hardlink) {
       await precommitVerify(
-        realPath,
+        requestedPath,
         realPath,
         rawBefore,
         expectAbsent === true,
       );
       abortCheck(signal);
       hardlinkWriteAttempted = true;
-      await writeInPlace(target.targetPath, rawAfter, target.mode, false);
+      await writeInPlace(target.targetPath, rawAfter, target.mode, false, rawBefore);
       fileCommitted = true;
       warnings.push(
         `[W_HARDLINK_NONATOMIC] ${label} has multiple hard links. The edit preserved the shared inode, so the write could not use atomic rename semantics.`,
@@ -304,7 +306,7 @@ export async function commitMutation(input: CommitInput): Promise<void> {
           target.mode ?? (expectAbsent ? 0o644 : undefined),
         );
         await precommitVerify(
-          realPath,
+          requestedPath,
           realPath,
           rawBefore,
           expectAbsent === true,
@@ -315,15 +317,12 @@ export async function commitMutation(input: CommitInput): Promise<void> {
         tempPath = undefined;
         fileCommitted = true;
       } catch (error: unknown) {
-        // Failures with their own codes pass through untouched; anything
-        // else from the atomic-replacement phase is an unexpected safe-
-        // replacement failure (spec §45) — never a silent non-atomic
-        // fallback.
+        // A rename may have succeeded even when the following directory fsync
+        // failed. Preserve the journal in that case for startup recovery.
+        if (error instanceof CommitAfterRenameError) throw error;
         if (
           error instanceof Error &&
-          /E_(FILE_CHANGED|PATH_CHANGED|ABORTED|FILE_TOO_LARGE)/.test(
-            error.message,
-          )
+          /E_(FILE_CHANGED|PATH_CHANGED|ABORTED|FILE_TOO_LARGE)/.test(error.message)
         ) {
           throw error;
         }
@@ -350,28 +349,23 @@ export async function commitMutation(input: CommitInput): Promise<void> {
     });
   } catch (error: unknown) {
     if (
-      hardlinkWriteAttempted &&
-      !(error instanceof Error && /E_FILE_CHANGED/.test(error.message))
+      error instanceof CommitAfterRenameError ||
+      (hardlinkWriteAttempted &&
+        !(error instanceof Error && /E_FILE_CHANGED/.test(error.message)))
     ) {
-      // A failed open proves no bytes were written; other failures may have
-      // happened after truncate/write began, so recovery must retain the row.
+      // Rename and hard-link writes may have changed bytes before a later
+      // durability/finalization error. Keep the journal for recovery.
       fileCommitted = true;
     }
-    if (tempPath) {
-      await removeTempFile(tempPath);
-    }
+    if (tempPath) await removeTempFile(tempPath);
     if (!fileCommitted) {
       try {
         withBusyRetry(() =>
-          cachedPrepare(
-            `DELETE FROM pending_transactions WHERE transaction_id = ?`,
-          ).run(transactionId),
+          cachedPrepare(`DELETE FROM pending_transactions WHERE transaction_id = ?`).run(transactionId),
         );
       } catch {}
       throw error;
     }
-    // File committed but state finalization failed: leave the pending row
-    // so startup recovery can promote the after-state (§31).
     throw new Error(
       `[E_STATE_CORRUPT] The file was committed but persistent state finalization failed: ${error instanceof Error ? error.message : String(error)}. Nothing was lost; startup recovery will finalize the transaction.`,
     );

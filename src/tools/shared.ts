@@ -90,6 +90,8 @@ export async function commitAndRenderMutation(opts: {
   tool: "edit" | "insert";
   /** request.path, used in error/warning text. */
   displayPath: string;
+  /** Original absolute requested alias, before target resolution. */
+  requestedPath: string;
   /** Resolved mutation target. */
   realPath: string;
   /** From loadAnchoredFile. */
@@ -152,6 +154,7 @@ export async function commitAndRenderMutation(opts: {
   abortIf(opts.signal);
   await commitMutation({
     realPath: opts.realPath,
+    requestedPath: opts.requestedPath,
     label: opts.displayPath,
     rawBefore: file.raw,
     checksumBefore: beforeRevision,

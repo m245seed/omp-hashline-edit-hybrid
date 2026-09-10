@@ -493,7 +493,9 @@ function runRipgrep(options: RunOptions): Promise<Map<string, LineEntry[]>> {
     const fileEntryMaps = new Map<string, Map<number, LineEntry>>();
     let currentFile = "";
     let isFirstLine = true;
-    let matchCount = 0;
+    // Ripgrep can emit buffered match events after the child is killed. Count
+    // each file/line once and ignore later distinct matches after the cap.
+    const matchedLines = new Set<string>();
 
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -532,10 +534,21 @@ function runRipgrep(options: RunOptions): Promise<Map<string, LineEntry[]>> {
         const noBom =
           isFirstLine && text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
         isFirstLine = false;
-        const normalized = noBom.endsWith("\n") ? noBom.slice(0, -1) : noBom;
+        // ripgrep includes the physical line terminator in JSON `lines.text`.
+        // Remove both bytes of CRLF so the served text matches the document
+        // model exactly (which stores terminators separately).
+        let normalized = noBom.endsWith("\n") ? noBom.slice(0, -1) : noBom;
+        if (normalized.endsWith("\r")) normalized = normalized.slice(0, -1);
         const entries = fileEntries.get(currentFile);
         const entryMap = fileEntryMaps.get(currentFile);
         if (!entries || !entryMap) return;
+        const matchKey = `${currentFile}\u0000${num}`;
+        if (event.type === "match" && !matchedLines.has(matchKey)) {
+          // A killed child may still drain already-buffered stdout. Do not
+          // admit a new match line once the requested cap has been reached.
+          if (matchedLines.size >= limit) return;
+          matchedLines.add(matchKey);
+        }
         const existing = entryMap.get(num);
         const isMatch = event.type === "match" || (existing?.isMatch ?? false);
         if (existing) {
@@ -549,11 +562,8 @@ function runRipgrep(options: RunOptions): Promise<Map<string, LineEntry[]>> {
           entries.push(entry);
           entryMap.set(num, entry);
         }
-        if (event.type === "match") {
-          matchCount++;
-          if (matchCount >= limit) {
-            stopChild();
-          }
+        if (event.type === "match" && matchedLines.size >= limit) {
+          stopChild();
         }
       }
     });
@@ -582,7 +592,31 @@ function runRipgrep(options: RunOptions): Promise<Map<string, LineEntry[]>> {
         );
         return;
       }
-      settle(() => resolveFn(fileEntries));
+
+      // A killed ripgrep process may still have emitted buffered context
+      // records for matches that were beyond the requested match limit. Keep
+      // only admitted match rows and contexts within the requested distance
+      // of those matches. This also handles overlapping contexts naturally.
+      const filteredEntries = new Map<string, LineEntry[]>();
+      for (const [file, entries] of fileEntries) {
+        const admittedMatches = entries
+          .filter((entry) => entry.isMatch)
+          .map((entry) => entry.lineNumber);
+        if (admittedMatches.length === 0) continue;
+        const retainedLines = new Set<number>();
+        for (const lineNumber of admittedMatches) {
+          const first = Math.max(1, lineNumber - context);
+          const last = lineNumber + context;
+          for (let line = first; line <= last; line++) retainedLines.add(line);
+        }
+        filteredEntries.set(
+          file,
+          entries.filter(
+            (entry) => entry.isMatch || retainedLines.has(entry.lineNumber),
+          ),
+        );
+      }
+      settle(() => resolveFn(filteredEntries));
     });
   });
 }
